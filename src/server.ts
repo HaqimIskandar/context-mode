@@ -349,6 +349,11 @@ server.registerTool(
         .optional()
         .default(30000)
         .describe("Max execution time in ms"),
+      background: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Keep process running after timeout (for servers/daemons). Returns partial output without killing the process."),
       intent: z
         .string()
         .optional()
@@ -360,7 +365,7 @@ server.registerTool(
         ),
     }),
   },
-  async ({ language, code, timeout, intent }) => {
+  async ({ language, code, timeout, background, intent }) => {
     // Security: deny-only firewall
     if (language === "shell") {
       const denied = checkDenyPolicy(code, "execute");
@@ -386,7 +391,7 @@ __cm_main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{
 if(__cm_net>0)process.stderr.write('__CM_NET__:'+__cm_net+'\\n');
 });`;
       }
-      const result = await executor.execute({ language, code: instrumentedCode, timeout });
+      const result = await executor.execute({ language, code: instrumentedCode, timeout, background });
 
       // Parse sandbox network metrics from stderr
       const netMatch = result.stderr?.match(/__CM_NET__:(\d+)/);
@@ -398,6 +403,17 @@ if(__cm_net>0)process.stderr.write('__CM_NET__:'+__cm_net+'\\n');
 
       if (result.timedOut) {
         const partialOutput = result.stdout?.trim();
+        if (result.backgrounded && partialOutput) {
+          // Background mode: process is still running, return partial output as success
+          return trackResponse("ctx_execute", {
+            content: [
+              {
+                type: "text" as const,
+                text: `${partialOutput}\n\n_(process backgrounded after ${timeout}ms — still running)_`,
+              },
+            ],
+          });
+        }
         if (partialOutput) {
           // Timeout with partial output — return as success with note
           return trackResponse("ctx_execute", {

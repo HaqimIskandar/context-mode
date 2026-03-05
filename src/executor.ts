@@ -29,6 +29,8 @@ interface ExecuteOptions {
   language: Language;
   code: string;
   timeout?: number;
+  /** Keep process running after timeout instead of killing it. */
+  background?: boolean;
 }
 
 interface ExecuteFileOptions extends ExecuteOptions {
@@ -58,7 +60,7 @@ export class PolyglotExecutor {
   }
 
   async execute(opts: ExecuteOptions): Promise<ExecResult> {
-    const { language, code, timeout = 30_000 } = opts;
+    const { language, code, timeout = 30_000, background = false } = opts;
     const tmpDir = mkdtempSync(join(tmpdir(), "ctx-mode-"));
 
     try {
@@ -74,14 +76,21 @@ export class PolyglotExecutor {
       // and other project-aware tools work naturally. Non-shell languages
       // run in the temp directory where their script file is written.
       const cwd = language === "shell" ? this.#projectRoot : tmpDir;
-      return await this.#spawn(cmd, cwd, timeout);
-    } finally {
+      const result = await this.#spawn(cmd, cwd, timeout, background);
+
+      // Skip tmpDir cleanup if process was backgrounded — it may still need files
+      if (!result.backgrounded) {
+        try {
+          rmSync(tmpDir, { recursive: true, force: true });
+        } catch { /* ignore */ }
+      }
+
+      return result;
+    } catch (err) {
       try {
         rmSync(tmpDir, { recursive: true, force: true });
-      } catch {
-        // On Windows, bash may still hold file handles when rmSync runs.
-        // Ignore EPERM/EBUSY — the OS will clean up %TEMP% eventually.
-      }
+      } catch { /* ignore */ }
+      throw err;
     }
   }
 
@@ -170,6 +179,7 @@ export class PolyglotExecutor {
     cmd: string[],
     cwd: string,
     timeout: number,
+    background = false,
   ): Promise<ExecResult> {
     return new Promise((res) => {
       // Only .cmd/.bat shims need shell on Windows; real executables don't.
@@ -198,9 +208,28 @@ export class PolyglotExecutor {
       });
 
       let timedOut = false;
+      let resolved = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        killTree(proc);
+        if (background) {
+          // Background mode: detach process, return partial output, keep running
+          resolved = true;
+          proc.unref();
+          proc.stdout!.destroy();
+          proc.stderr!.destroy();
+          const rawStdout = Buffer.concat(stdoutChunks).toString("utf-8");
+          const rawStderr = Buffer.concat(stderrChunks).toString("utf-8");
+          const max = this.#maxOutputBytes;
+          res({
+            stdout: smartTruncate(rawStdout, max),
+            stderr: smartTruncate(rawStderr, max),
+            exitCode: 0,
+            timedOut: true,
+            backgrounded: true,
+          });
+        } else {
+          killTree(proc);
+        }
       }, timeout);
 
       // Stream-level byte cap: kill the process once combined stdout+stderr
@@ -234,6 +263,7 @@ export class PolyglotExecutor {
 
       proc.on("close", (exitCode) => {
         clearTimeout(timer);
+        if (resolved) return; // Already resolved by background timeout
         const rawStdout = Buffer.concat(stdoutChunks).toString("utf-8");
         let rawStderr = Buffer.concat(stderrChunks).toString("utf-8");
 
@@ -255,6 +285,7 @@ export class PolyglotExecutor {
 
       proc.on("error", (err) => {
         clearTimeout(timer);
+        if (resolved) return; // Already resolved by background timeout
         res({
           stdout: "",
           stderr: err.message,
