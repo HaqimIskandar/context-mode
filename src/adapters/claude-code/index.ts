@@ -159,6 +159,14 @@ export class ClaudeCodeAdapter implements HookAdapter {
     if (response.decision === "modify" && response.updatedInput) {
       return { updatedInput: response.updatedInput };
     }
+    if (response.decision === "context" && response.additionalContext) {
+      // Claude Code: inject additionalContext into model context
+      return { additionalContext: response.additionalContext };
+    }
+    if (response.decision === "ask") {
+      // Claude Code: native "ask" — prompt user for permission
+      return { permissionDecision: "ask" };
+    }
     // "allow" — return null/undefined for passthrough
     return undefined;
   }

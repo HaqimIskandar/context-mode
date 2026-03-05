@@ -174,6 +174,22 @@ export class VSCodeCopilotAdapter implements HookAdapter {
         },
       };
     }
+    if (response.decision === "context" && response.additionalContext) {
+      // VS Code Copilot: inject additionalContext via hookSpecificOutput
+      return {
+        hookSpecificOutput: {
+          hookEventName: VSCODE_HOOK_NAMES.PRE_TOOL_USE,
+          additionalContext: response.additionalContext,
+        },
+      };
+    }
+    if (response.decision === "ask") {
+      // VS Code Copilot: use deny to force user attention (no native "ask")
+      return {
+        permissionDecision: "deny",
+        reason: response.reason ?? "Action requires user confirmation (security policy)",
+      };
+    }
     // "allow" — return undefined for passthrough
     return undefined;
   }

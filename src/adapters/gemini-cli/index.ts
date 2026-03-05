@@ -167,6 +167,21 @@ export class GeminiCLIAdapter implements HookAdapter {
         },
       };
     }
+    if (response.decision === "context" && response.additionalContext) {
+      // Gemini CLI: inject additionalContext via hookSpecificOutput
+      return {
+        hookSpecificOutput: {
+          additionalContext: response.additionalContext,
+        },
+      };
+    }
+    if (response.decision === "ask") {
+      // Gemini CLI: no native "ask" — deny to be safe
+      return {
+        decision: "deny",
+        reason: response.reason ?? "Action requires user confirmation (security policy)",
+      };
+    }
     // "allow" — return undefined for passthrough
     return undefined;
   }

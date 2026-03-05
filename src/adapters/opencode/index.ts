@@ -158,7 +158,16 @@ export class OpenCodeAdapter implements HookAdapter {
       // OpenCode: output.args mutation
       return { args: response.updatedInput };
     }
-    // "allow" — return undefined for passthrough
+    if (response.decision === "ask") {
+      // OpenCode: no native "ask" mechanism — throw to be safe
+      throw new Error(
+        response.reason ?? "Action requires user confirmation (security policy)",
+      );
+    }
+    // "context" — OpenCode's tool.execute.before cannot inject additionalContext
+    // in PreToolUse (platform limitation). The guidance is delivered via
+    // CLAUDE.md/AGENTS.md routing instructions instead. Passthrough.
+    // "allow" — passthrough
     return undefined;
   }
 

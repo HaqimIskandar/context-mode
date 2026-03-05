@@ -100,14 +100,22 @@ export interface SessionStartEvent {
 // Hook response types
 // ─────────────────────────────────────────────────────────
 
-/** Response from PreToolUse hook — can block, modify, or pass through. */
+/** Response from PreToolUse hook — can block, modify, inject context, or pass through. */
 export interface PreToolUseResponse {
-  /** "allow" = pass through, "deny" = block tool execution, "modify" = change input. */
-  decision: "allow" | "deny" | "modify";
+  /**
+   * "allow"   = pass through (no action)
+   * "deny"    = block tool execution
+   * "modify"  = change input args
+   * "context" = inject additional context (soft guidance)
+   * "ask"     = prompt user for confirmation (security policy match)
+   */
+  decision: "allow" | "deny" | "modify" | "context" | "ask";
   /** Reason for denial (shown to the model). */
   reason?: string;
   /** Modified tool input (only when decision = "modify"). */
   updatedInput?: Record<string, unknown>;
+  /** Additional context to inject (only when decision = "context"). */
+  additionalContext?: string;
 }
 
 /** Response from PostToolUse hook — can inject context or modify output. */
