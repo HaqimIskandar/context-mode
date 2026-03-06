@@ -361,6 +361,75 @@ describe("Plan Mode Events", () => {
     assert.ok(planEvents[0].data.includes("install dependencies"));
   });
 
+  test("extracts plan_approved when user approves", () => {
+    const input = {
+      tool_name: "ExitPlanMode",
+      tool_input: {},
+      tool_response: "User has approved your plan",
+    };
+
+    const events = extractEvents(input);
+    const planEvents = events.filter(e => e.category === "plan");
+    assert.equal(planEvents.length, 2); // plan_exit + plan_approved
+    assert.equal(planEvents[0].type, "plan_exit");
+    assert.equal(planEvents[1].type, "plan_approved");
+    assert.equal(planEvents[1].priority, 1);
+  });
+
+  test("extracts plan_rejected when user rejects", () => {
+    const input = {
+      tool_name: "ExitPlanMode",
+      tool_input: {},
+      tool_response: "User declined your plan. Please revise.",
+    };
+
+    const events = extractEvents(input);
+    const planEvents = events.filter(e => e.category === "plan");
+    assert.equal(planEvents.length, 2); // plan_exit + plan_rejected
+    assert.equal(planEvents[0].type, "plan_exit");
+    assert.equal(planEvents[1].type, "plan_rejected");
+    assert.ok(planEvents[1].data.includes("rejected"));
+  });
+
+  test("extracts plan_file_write from Write to ~/.claude/plans/", () => {
+    const input = {
+      tool_name: "Write",
+      tool_input: { file_path: "/Users/test/.claude/plans/jaunty-nebula.md", content: "# Plan" },
+      tool_response: "ok",
+    };
+
+    const events = extractEvents(input);
+    const planEvents = events.filter(e => e.category === "plan");
+    assert.equal(planEvents.length, 1);
+    assert.equal(planEvents[0].type, "plan_file_write");
+    assert.ok(planEvents[0].data.includes("jaunty-nebula.md"));
+  });
+
+  test("extracts plan_file_write from Edit to ~/.claude/plans/", () => {
+    const input = {
+      tool_name: "Edit",
+      tool_input: { file_path: "/Users/test/.claude/plans/my-plan.md", old_string: "a", new_string: "b" },
+      tool_response: "ok",
+    };
+
+    const events = extractEvents(input);
+    const planEvents = events.filter(e => e.category === "plan");
+    assert.equal(planEvents.length, 1);
+    assert.equal(planEvents[0].type, "plan_file_write");
+  });
+
+  test("does not extract plan event from Write to non-plan path", () => {
+    const input = {
+      tool_name: "Write",
+      tool_input: { file_path: "/Users/test/src/index.ts", content: "code" },
+      tool_response: "ok",
+    };
+
+    const events = extractEvents(input);
+    const planEvents = events.filter(e => e.category === "plan");
+    assert.equal(planEvents.length, 0);
+  });
+
   test("ignores non-plan tools", () => {
     const input = {
       tool_name: "Bash",

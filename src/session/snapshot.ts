@@ -111,7 +111,7 @@ export function renderTaskState(taskEvents: StoredEvent[]): string {
 
   if (creates.length === 0) return "";
 
-  const DONE = new Set(["completed", "deleted"]);
+  const DONE = new Set(["completed", "deleted", "failed"]);
 
   // Match creates to updates positionally (creates[0] → lowest taskId)
   const sortedIds = Object.keys(updates).sort((a, b) => Number(a) - Number(b));

@@ -76,7 +76,7 @@ export function writeSessionEventsFile(events, eventsPath) {
         creates.push(ev.data);
       }
     }
-    const DONE = new Set(["completed", "deleted"]);
+    const DONE = new Set(["completed", "deleted", "failed"]);
     const sortedIds = Object.keys(updates).sort((a, b) => Number(a) - Number(b));
     const pending = [];
     const completed = [];
@@ -185,11 +185,16 @@ export function writeSessionEventsFile(events, eventsPath) {
   }
 
   if (grouped.plan?.length > 0) {
+    const hasApproved = grouped.plan.some(e => e.type === "plan_approved");
+    const hasRejected = grouped.plan.some(e => e.type === "plan_rejected");
     const lastPlan = grouped.plan[grouped.plan.length - 1];
-    const isActive = lastPlan.type === "plan_enter";
+    const isActive = lastPlan.type === "plan_enter" || lastPlan.type === "plan_file_write";
     lines.push("## Plan Mode");
     lines.push("");
-    lines.push(`- Status: ${isActive ? "active (in planning)" : "completed (plan executed)"}`);
+    if (hasApproved) lines.push("- Status: APPROVED AND EXECUTED");
+    else if (hasRejected) lines.push("- Status: REJECTED BY USER");
+    else if (isActive) lines.push("- Status: ACTIVE (in planning)");
+    else lines.push("- Status: COMPLETED");
     for (const ev of grouped.plan) lines.push(`- ${ev.data}`);
     lines.push("");
   }
@@ -245,7 +250,7 @@ export function buildSessionDirective(source, eventMeta) {
     }
 
     if (creates.length > 0) {
-      const DONE = new Set(["completed", "deleted"]);
+      const DONE = new Set(["completed", "deleted", "failed"]);
       const sortedIds = Object.keys(updates).sort((a, b) => Number(a) - Number(b));
       const pending = [];
       for (let i = 0; i < creates.length; i++) {
@@ -382,11 +387,26 @@ export function buildSessionDirective(source, eventMeta) {
 
   // 14. Plan mode state — critical for preventing stale plan restoration
   if (grouped.plan?.length > 0) {
+    const hasApproved = grouped.plan.some(e => e.type === "plan_approved");
+    const hasRejected = grouped.plan.some(e => e.type === "plan_rejected");
+    const hasFileWrite = grouped.plan.some(e => e.type === "plan_file_write");
     const lastPlan = grouped.plan[grouped.plan.length - 1];
-    const isActive = lastPlan.type === "plan_enter";
+    const isActive = lastPlan.type === "plan_enter" || lastPlan.type === "plan_file_write";
+
     block += `\n## Plan Mode`;
-    block += `\n- Status: ${isActive ? "ACTIVE (in planning phase)" : "COMPLETED (plan was executed)"}`;
-    if (!isActive) {
+    if (hasApproved) {
+      block += `\n- Status: APPROVED AND EXECUTED`;
+      block += `\n- The plan was approved and executed. Do NOT re-enter plan mode or re-propose the same plan.`;
+    } else if (hasRejected) {
+      block += `\n- Status: REJECTED BY USER`;
+      block += `\n- The user rejected the previous plan. Ask what they want changed before re-planning.`;
+    } else if (isActive) {
+      block += `\n- Status: ACTIVE (in planning phase)`;
+      if (hasFileWrite) {
+        block += `\n- Plan file has been written. Awaiting user approval via ExitPlanMode.`;
+      }
+    } else {
+      block += `\n- Status: COMPLETED`;
       block += `\n- The plan has been executed. Do NOT re-enter plan mode or re-propose the same plan.`;
     }
     block += `\n`;

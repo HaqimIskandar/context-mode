@@ -259,7 +259,14 @@ function extractTask(input: HookInput): SessionEvent[] {
 
 /**
  * Category 15: plan
- * EnterPlanMode / ExitPlanMode tool calls — tracks plan lifecycle.
+ * Tracks the full plan mode lifecycle:
+ * - EnterPlanMode → plan_enter
+ * - Write/Edit to ~/.claude/plans/ → plan_file_write
+ * - ExitPlanMode → plan_exit (with allowedPrompts)
+ * - ExitPlanMode tool_response → plan_approved / plan_rejected
+ *
+ * Note: Shift+Tab and /plan command do NOT fire PostToolUse hooks
+ * (Claude Code bug #15660). Only programmatic EnterPlanMode is tracked.
  */
 function extractPlan(input: HookInput): SessionEvent[] {
   if (input.tool_name === "EnterPlanMode") {
@@ -272,6 +279,9 @@ function extractPlan(input: HookInput): SessionEvent[] {
   }
 
   if (input.tool_name === "ExitPlanMode") {
+    const events: SessionEvent[] = [];
+
+    // Plan exit event with allowedPrompts detail
     const prompts = input.tool_input["allowedPrompts"];
     const detail = Array.isArray(prompts) && prompts.length > 0
       ? `exited plan mode (allowed: ${truncateAny(prompts.map((p: unknown) => {
@@ -279,12 +289,45 @@ function extractPlan(input: HookInput): SessionEvent[] {
           return String(p);
         }).join(", "), 200)})`
       : "exited plan mode";
-    return [{
+    events.push({
       type: "plan_exit",
       category: "plan",
       data: truncate(detail),
       priority: 2,
-    }];
+    });
+
+    // Detect approval/rejection from tool_response
+    const response = String(input.tool_response ?? "").toLowerCase();
+    if (response.includes("approved") || response.includes("approve")) {
+      events.push({
+        type: "plan_approved",
+        category: "plan",
+        data: "plan approved by user",
+        priority: 1,
+      });
+    } else if (response.includes("rejected") || response.includes("decline") || response.includes("denied")) {
+      events.push({
+        type: "plan_rejected",
+        category: "plan",
+        data: truncate(`plan rejected: ${input.tool_response ?? ""}`, 300),
+        priority: 2,
+      });
+    }
+
+    return events;
+  }
+
+  // Detect plan file writes (Write/Edit to ~/.claude/plans/)
+  if (input.tool_name === "Write" || input.tool_name === "Edit") {
+    const filePath = String(input.tool_input["file_path"] ?? "");
+    if (/[/\\]\.claude[/\\]plans[/\\]/.test(filePath)) {
+      return [{
+        type: "plan_file_write",
+        category: "plan",
+        data: truncate(`plan file: ${filePath.split(/[/\\]/).pop() ?? filePath}`),
+        priority: 2,
+      }];
+    }
   }
 
   return [];
