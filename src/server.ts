@@ -24,8 +24,6 @@ import {
   hasBunRuntime,
 } from "./runtime.js";
 import { classifyNonZeroExit } from "./exit-classify.js";
-import { initSync, flushSync, destroySync } from "./sync/index.js";
-
 const VERSION = "1.0.16";
 
 // Prevent silent server death from unhandled async errors
@@ -1725,10 +1723,8 @@ async function main() {
   const shutdown = () => {
     executor.cleanupBackgrounded();
     if (_store) _store.cleanup();
-    try { destroySync(); } catch { /* sync cleanup is best-effort */ }
   };
   const gracefulShutdown = async () => {
-    try { await flushSync(); } catch { /* flush is best-effort */ }
     shutdown();
     process.exit(0);
   };
@@ -1751,23 +1747,6 @@ async function main() {
       if (written) console.error(`Wrote routing instructions: ${written}`);
     }
   } catch { /* best effort — don't block server startup */ }
-
-  // Initialize cloud sync (fire-and-forget, never blocks server)
-  try {
-    const syncProjectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-    const syncSessionId = createHash("sha256").update(syncProjectDir + ":" + Date.now()).digest("hex").slice(0, 16);
-    let gitRemote: string | undefined;
-    try {
-      const { execSync } = await import("node:child_process");
-      gitRemote = execSync("git remote get-url origin", {
-        cwd: syncProjectDir,
-        timeout: 3000,
-        stdio: ["ignore", "pipe", "ignore"],
-      }).toString().trim() || undefined;
-    } catch { /* no git remote available */ }
-    const syncOk = initSync(syncSessionId, syncProjectDir, gitRemote);
-    if (syncOk) console.error("[context-mode] Cloud sync initialized");
-  } catch { /* sync init failure must never block the plugin */ }
 
   console.error(`Context Mode MCP server v${VERSION} running on stdio`);
   console.error(`Detected runtimes:\n${getRuntimeSummary(runtimes)}`);
