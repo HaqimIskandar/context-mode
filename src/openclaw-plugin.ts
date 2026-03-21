@@ -217,7 +217,7 @@ export default {
   register(api: OpenClawPluginApi): void {
     // Resolve build dir from compiled JS location
     const buildDir = dirname(fileURLToPath(import.meta.url));
-    const projectDir = process.env.OPENCLAW_PROJECT_DIR || process.cwd();
+    const projectDir = process.cwd();
     const pluginRoot = resolve(buildDir, "..");
 
     // Structured logger — wraps api.logger, falls back to no-op.

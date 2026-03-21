@@ -16,6 +16,14 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(__dirname, "..");
 
+/**
+ * Validate that a path is safe to interpolate into a cmd.exe command.
+ * Rejects characters that could enable command injection via cmd.exe.
+ */
+function isSafeWindowsPath(p) {
+  return !/[&|<>"^%\r\n]/.test(p);
+}
+
 // ── 1. OpenClaw detection ────────────────────────────────────────────
 if (process.env.OPENCLAW_STATE_DIR) {
   console.log("\n  OpenClaw detected. Run: npm run install:openclaw\n");
@@ -73,12 +81,17 @@ if (process.platform === "win32" && process.env.npm_config_global === "true") {
         }
 
         // Create directory junction (no admin privileges needed on Windows 10+)
-        execSync(`mklink /J "${expectedPkgDir}" "${actualPkgDir}"`, {
-          shell: "cmd.exe",
-          stdio: "pipe",
-        });
-        console.log(`\n  context-mode: created junction for nvm4w compatibility`);
-        console.log(`    ${expectedPkgDir} → ${actualPkgDir}\n`);
+        // Validate paths to prevent cmd.exe injection via shell metacharacters
+        if (!isSafeWindowsPath(expectedPkgDir) || !isSafeWindowsPath(actualPkgDir)) {
+          console.warn(`  context-mode: skipping junction — path contains unsafe characters`);
+        } else {
+          execSync(`mklink /J "${expectedPkgDir}" "${actualPkgDir}"`, {
+            shell: "cmd.exe",
+            stdio: "pipe",
+          });
+          console.log(`\n  context-mode: created junction for nvm4w compatibility`);
+          console.log(`    ${expectedPkgDir} → ${actualPkgDir}\n`);
+        }
       }
     }
 

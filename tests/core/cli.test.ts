@@ -518,11 +518,14 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     expect(pkg.exports["./cli"]).toBe("./cli.bundle.mjs");
   });
 
-  it("server.ts ctx_doctor uses cli.bundle.mjs with fallback", () => {
+  it("server.ts ctx_doctor runs diagnostics in-process (no CLI dependency)", () => {
     const src = readFileSync(resolve(ROOT, "src", "server.ts"), "utf-8");
-    // ctx_doctor handler must prefer cli.bundle.mjs
-    const doctorSection = src.slice(src.indexOf("ctx_doctor"), src.indexOf("ctx_doctor") + 500);
-    expect(doctorSection).toContain("cli.bundle.mjs");
+    const doctorSection = src.slice(src.indexOf("ctx_doctor"), src.indexOf("ctx_upgrade"));
+    // Must NOT delegate to CLI — runs server-side
+    expect(doctorSection).not.toContain('node "');
+    // Must run actual checks
+    expect(doctorSection).toContain("PolyglotExecutor");
+    expect(doctorSection).toContain("FTS5");
   });
 
   it("server.ts ctx_upgrade uses cli.bundle.mjs with fallback", () => {
@@ -544,6 +547,99 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     const upgradeSection = src.slice(upgradeIdx, upgradeIdx + 500);
     expect(doctorSection).toContain("cli.bundle.mjs");
     expect(upgradeSection).toContain("cli.bundle.mjs");
+  });
+});
+
+// ── start.mjs CLI self-heal ───────────────────────────────────────────
+
+describe("start.mjs CLI self-heal", () => {
+  test("start.mjs self-heals cli.bundle.mjs when missing", () => {
+    const src = readFileSync(resolve(ROOT, "start.mjs"), "utf-8");
+    // Must check for cli.bundle.mjs existence
+    expect(src).toContain("cli.bundle.mjs");
+    // Must reference build/cli.js as fallback source
+    expect(src).toContain("build");
+    expect(src).toContain("cli.js");
+    // Must write a shim
+    expect(src).toContain("writeFileSync");
+  });
+
+  test("start.mjs CLI self-heal is after ensureNativeCompat and before server import", () => {
+    const src = readFileSync(resolve(ROOT, "start.mjs"), "utf-8");
+    const nativeCompatIdx = src.indexOf("ensureNativeCompat(__dirname)");
+    const selfHealIdx = src.indexOf('cli.bundle.mjs');
+    const serverImportIdx = src.indexOf('server.bundle.mjs');
+    expect(nativeCompatIdx).toBeGreaterThan(-1);
+    expect(selfHealIdx).toBeGreaterThan(-1);
+    expect(serverImportIdx).toBeGreaterThan(-1);
+    // Self-heal must be between ensureNativeCompat call and server import
+    expect(selfHealIdx).toBeGreaterThan(nativeCompatIdx);
+    expect(selfHealIdx).toBeLessThan(serverImportIdx);
+  });
+});
+
+// ── session-loaders.mjs fallback ──────────────────────────────────────
+
+describe("session-loaders.mjs fallback to build/session/*.js", () => {
+  test("session-loaders.mjs has loadModule fallback function", () => {
+    const src = readFileSync(resolve(ROOT, "hooks", "session-loaders.mjs"), "utf-8");
+    // Must have a loadModule helper that checks existsSync
+    expect(src).toContain("loadModule");
+    expect(src).toContain("existsSync");
+  });
+
+  test("session-loaders.mjs falls back to build/session/*.js paths", () => {
+    const src = readFileSync(resolve(ROOT, "hooks", "session-loaders.mjs"), "utf-8");
+    // Must reference the build/session fallback directory
+    expect(src).toContain("build");
+    expect(src).toContain("session");
+    // Must reference specific build fallback filenames
+    expect(src).toContain("db.js");
+    expect(src).toContain("extract.js");
+    expect(src).toContain("snapshot.js");
+  });
+
+  test("session-loaders.mjs still tries bundles first", () => {
+    const src = readFileSync(resolve(ROOT, "hooks", "session-loaders.mjs"), "utf-8");
+    // Bundle names must still be present
+    expect(src).toContain("session-db.bundle.mjs");
+    expect(src).toContain("session-extract.bundle.mjs");
+    expect(src).toContain("session-snapshot.bundle.mjs");
+  });
+
+  test("session-loaders.mjs imports existsSync", () => {
+    const src = readFileSync(resolve(ROOT, "hooks", "session-loaders.mjs"), "utf-8");
+    expect(src).toMatch(/import\s*\{[^}]*existsSync[^}]*\}\s*from\s*["']node:fs["']/);
+  });
+});
+
+// ── SKILL.md MCP-first pattern ────────────────────────────────────────
+
+describe("SKILL.md prefers MCP tool over Bash", () => {
+  it("ctx-doctor SKILL.md prefers MCP tool over Bash", () => {
+    const skill = readFileSync(resolve(ROOT, "skills", "ctx-doctor", "SKILL.md"), "utf-8");
+    // Must mention the MCP tool
+    expect(skill).toContain("ctx_doctor");
+    expect(skill).toContain("MCP tool");
+    // MCP tool instruction must appear BEFORE the Bash fallback
+    const mcpIdx = skill.indexOf("ctx_doctor");
+    const fallbackIdx = skill.indexOf("Fallback");
+    expect(mcpIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeGreaterThan(-1);
+    expect(mcpIdx).toBeLessThan(fallbackIdx);
+  });
+
+  it("ctx-upgrade SKILL.md prefers MCP tool over Bash", () => {
+    const skill = readFileSync(resolve(ROOT, "skills", "ctx-upgrade", "SKILL.md"), "utf-8");
+    // Must mention the MCP tool
+    expect(skill).toContain("ctx_upgrade");
+    expect(skill).toContain("MCP tool");
+    // MCP tool instruction must appear BEFORE the Bash fallback
+    const mcpIdx = skill.indexOf("ctx_upgrade");
+    const fallbackIdx = skill.indexOf("Fallback");
+    expect(mcpIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeGreaterThan(-1);
+    expect(mcpIdx).toBeLessThan(fallbackIdx);
   });
 });
 
