@@ -412,18 +412,19 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
    command = "context-mode"
    ```
 
-3. *(Optional)* Add hooks for session tracking. Create `~/.codex/hooks.json`:
+3. Add hooks for routing enforcement and session tracking. Create `~/.codex/hooks.json`:
 
    ```json
    {
      "hooks": {
+       "PreToolUse": [{ "hooks": [{ "type": "command", "command": "context-mode hook codex pretooluse" }] }],
        "PostToolUse": [{ "hooks": [{ "type": "command", "command": "context-mode hook codex posttooluse" }] }],
        "SessionStart": [{ "hooks": [{ "type": "command", "command": "context-mode hook codex sessionstart" }] }]
      }
    }
    ```
 
-   Hooks enable session continuity and event tracking. Without hooks, only MCP tools are available.
+   `PreToolUse` enforces sandbox routing (blocks dangerous commands, redirects to MCP tools). `PostToolUse` captures session events. `SessionStart` restores state after compaction.
 
 4. Copy routing instructions (recommended even with hooks for full routing awareness):
 
@@ -437,7 +438,7 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
 
 **Verify:** Start a session and type `ctx stats`. Context-mode tools should appear and respond.
 
-**Routing:** With hooks, SessionStart injects routing instructions and PostToolUse tracks events. Without hooks, the `AGENTS.md` file is the only enforcement method (~60% compliance). Codex CLI's hook system uses the same JSON stdin/stdout wire protocol as Claude Code but does not support arg or output modification.
+**Routing:** Hooks enforce routing programmatically via PreToolUse. PostToolUse tracks session events. SessionStart restores state. The optional AGENTS.md file provides routing instructions for model awareness. Codex CLI's hook system uses the same JSON stdin/stdout wire protocol as Claude Code but does not support arg or output modification.
 
 </details>
 
@@ -738,13 +739,14 @@ Session continuity requires 4 hooks working together:
 
 | Hook | Role | Claude Code | Gemini CLI | VS Code Copilot | Cursor | OpenCode | KiloCode | OpenClaw | Codex CLI | Antigravity | Kiro | Zed | Pi |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **PostToolUse** | Captures events after each tool call | Yes | Yes | Yes | Yes | Plugin | Plugin | Plugin | -- | -- | Yes | -- | ✓ (via tool_result event) |
+| **PreToolUse** | Enforces sandbox routing before tool execution | Yes | -- | -- | Yes | -- | -- | -- | Yes | -- | Yes | -- | ✓ (via tool_call event) |
+| **PostToolUse** | Captures events after each tool call | Yes | Yes | Yes | Yes | Plugin | Plugin | Plugin | Yes | -- | Yes | -- | ✓ (via tool_result event) |
 | **UserPromptSubmit** | Captures user decisions and corrections | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 | **PreCompact** | Builds snapshot before compaction | Yes | Yes | Yes | -- | Plugin | Plugin | Plugin | -- | -- | -- | -- | ✓ (via session_before_compact) |
-| **SessionStart** | Restores state after compaction or resume | Yes | Yes | Yes | -- | -- | -- | Plugin | -- | -- | -- | -- | ✓ (via session_start event) |
-| | **Session completeness** | **Full** | **High** | **High** | **Partial** | **High** | **High** | **High** | **--** | **--** | **Partial** | **--** | **High** |
+| **SessionStart** | Restores state after compaction or resume | Yes | Yes | Yes | -- | -- | -- | Plugin | Yes | -- | -- | -- | ✓ (via session_start event) |
+| | **Session completeness** | **Full** | **High** | **High** | **Partial** | **High** | **High** | **High** | **Partial** | **--** | **Partial** | **--** | **High** |
 
-> **Note:** Full session continuity (capture + snapshot + restore) works on **Claude Code**, **Gemini CLI**, and **VS Code Copilot**. **OpenCode** provides **high** session continuity: it captures tool events and injects compaction snapshots via the plugin, but SessionStart is not yet available ([#14808](https://github.com/sst/opencode/issues/14808)), so startup/resume restore is not supported. **KiloCode** shares the same plugin architecture as OpenCode via the OpenCodeAdapter, so its continuity level depends on KiloCode's SessionStart support. **Cursor** captures tool events via `preToolUse`/`postToolUse`, but `sessionStart` is currently rejected by Cursor's validator ([forum report](https://forum.cursor.com/t/unknown-hook-type-sessionstart/149566)), so session restore after compaction is not available yet. **OpenClaw** uses native gateway plugin hooks (`api.on()`) for full session continuity. **Pi Coding Agent** provides high session continuity via extension hooks (`tool_call`, `tool_result`, `session_start`, `session_before_compact`). **Codex CLI**, **Antigravity**, **Kiro**, and **Zed** have no hook support in the current release, so session tracking is not available.
+> **Note:** Full session continuity (capture + snapshot + restore) works on **Claude Code**, **Gemini CLI**, and **VS Code Copilot**. **OpenCode** provides **high** session continuity: it captures tool events and injects compaction snapshots via the plugin, but SessionStart is not yet available ([#14808](https://github.com/sst/opencode/issues/14808)), so startup/resume restore is not supported. **KiloCode** shares the same plugin architecture as OpenCode via the OpenCodeAdapter, so its continuity level depends on KiloCode's SessionStart support. **Cursor** captures tool events via `preToolUse`/`postToolUse`, but `sessionStart` is currently rejected by Cursor's validator ([forum report](https://forum.cursor.com/t/unknown-hook-type-sessionstart/149566)), so session restore after compaction is not available yet. **OpenClaw** uses native gateway plugin hooks (`api.on()`) for full session continuity. **Pi Coding Agent** provides high session continuity via extension hooks (`tool_call`, `tool_result`, `session_start`, `session_before_compact`). **Codex CLI** provides hook-based session tracking via PreToolUse/PostToolUse/SessionStart, using the same JSON stdin/stdout protocol as Claude Code. **Antigravity**, **Kiro**, and **Zed** have no hook support in the current release, so session tracking is not available.
 
 <details>
 <summary><strong>What gets captured</strong></summary>
@@ -827,7 +829,7 @@ Detailed event data is also indexed into FTS5 for on-demand retrieval via `searc
 
 **OpenClaw / Pi Agent** — High coverage. All tool lifecycle hooks (`after_tool_call`, `before_compaction`, `session_start`) fire via the native gateway plugin. User decisions aren't captured but file edits, git ops, errors, and tasks are fully tracked. Falls back to DB snapshot reconstruction if compaction hooks fail on older gateway versions. See [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md).
 
-**Codex CLI** — No session support. No hooks means no event capture. Each compaction or new session starts fresh. Requires manually copying `AGENTS.md` to your project root.
+**Codex CLI** — Hook-based session tracking. PreToolUse enforces routing, PostToolUse captures events, SessionStart restores state after compaction. Same wire protocol as Claude Code. PreCompact and UserPromptSubmit are not yet available, so compaction snapshots rely on DB reconstruction.
 
 **Antigravity** — No session support. Same as Codex CLI — no hooks, no event capture. Requires manually copying `GEMINI.md` to your project root. Auto-detected via MCP protocol handshake (`clientInfo.name`).
 
