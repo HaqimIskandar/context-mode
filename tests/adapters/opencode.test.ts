@@ -177,11 +177,17 @@ describe("OpenCodeAdapter", () => {
       expect(adapter.getSettingsPath()).toBe(resolve("opencode.json"));
     });
 
-    it("session dir is under ~/.config/opencode/context-mode/sessions/", () => {
+    it("session dir is under platform-specific config directory", () => {
       const sessionDir = adapter.getSessionDir();
-      expect(sessionDir).toBe(
-        join(homedir(), ".config", "opencode", "context-mode", "sessions"),
-      );
+      let expectedDir: string;
+      if (process.platform === "win32") {
+        const configDir = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+        expectedDir = join(configDir, "opencode", "context-mode", "sessions");
+      } else {
+        const configDir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+        expectedDir = join(configDir, "opencode", "context-mode", "sessions");
+      }
+      expect(sessionDir).toBe(expectedDir);
     });
 
     it("configureAllHooks writes back to the global config it read", () => {
@@ -220,7 +226,7 @@ describe("OpenCodeAdapter", () => {
       rmSync(root, { recursive: true, force: true });
     });
 
-    it("configureAllHooks keeps project config precedence", () => {
+    it("readSettings prioritizes config with context-mode plugin", () => {
       const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
       const dir = join(root, "project");
       const home = join(root, "home");
@@ -229,14 +235,14 @@ describe("OpenCodeAdapter", () => {
       const tsx = resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
       mkdirSync(dir, { recursive: true });
       mkdirSync(conf, { recursive: true });
-      writeFileSync(join(conf, "opencode.json"), JSON.stringify({ plugin: [] }, null, 2) + "\n");
-      writeFileSync(resolve(dir, "opencode.json"), JSON.stringify({ plugin: [] }, null, 2) + "\n");
+      writeFileSync(join(conf, "opencode.json"), JSON.stringify({ plugin: ["other-plugin"] }, null, 2) + "\n");
+      writeFileSync(resolve(dir, "opencode.json"), JSON.stringify({ plugin: ["context-mode"] }, null, 2) + "\n");
       const run = spawnSync(
         process.execPath,
         [
           tsx,
           "-e",
-          `import { OpenCodeAdapter } from ${JSON.stringify(src)};const a=new OpenCodeAdapter();console.log(JSON.stringify(a.configureAllHooks('/tmp/plugin')))`,
+          `import { OpenCodeAdapter } from ${JSON.stringify(src)};const a=new OpenCodeAdapter();a.readSettings();console.log(JSON.stringify({path:a.settingsPath}))`,
         ],
         {
           cwd: dir,
@@ -246,13 +252,40 @@ describe("OpenCodeAdapter", () => {
       );
 
       expect(run.status).toBe(0);
-      expect(JSON.parse(run.stdout)).toEqual(["Added context-mode to plugin array"]);
-      expect(JSON.parse(readFileSync(resolve(dir, "opencode.json"), "utf-8"))).toEqual({
-        plugin: ["context-mode"],
-      });
-      expect(JSON.parse(readFileSync(join(conf, "opencode.json"), "utf-8"))).toEqual({
-        plugin: [],
-      });
+      const resultPath = JSON.parse(run.stdout).path;
+      expect(resultPath).toContain(join("project", "opencode.json"));
+
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("readSettings falls back to global config when no plugin found", () => {
+      const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
+      const dir = join(root, "project");
+      const home = join(root, "home");
+      const conf = join(home, ".config", "opencode");
+      const src = resolve(process.cwd(), "src", "adapters", "opencode", "index.ts");
+      const tsx = resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      mkdirSync(dir, { recursive: true });
+      mkdirSync(conf, { recursive: true });
+      writeFileSync(join(conf, "opencode.json"), JSON.stringify({ plugin: ["other-plugin"] }, null, 2) + "\n");
+      writeFileSync(resolve(dir, "opencode.json"), JSON.stringify({ plugin: [] }, null, 2) + "\n");
+      const run = spawnSync(
+        process.execPath,
+        [
+          tsx,
+          "-e",
+          `import { OpenCodeAdapter } from ${JSON.stringify(src)};const a=new OpenCodeAdapter();a.readSettings();console.log(JSON.stringify({path:a.settingsPath}))`,
+        ],
+        {
+          cwd: dir,
+          env: env(home),
+          encoding: "utf-8",
+        },
+      );
+
+      expect(run.status).toBe(0);
+      const resultPath = JSON.parse(run.stdout).path;
+      expect(resultPath).toContain(join(home, ".config", "opencode", "opencode.json"));
 
       rmSync(root, { recursive: true, force: true });
     });
@@ -432,11 +465,17 @@ describe("OpenCodeAdapter for KiloCode", () => {
       expect(adapter.getSettingsPath()).toBe(resolve("kilo.json"));
     });
 
-    it("session dir is under ~/.config/kilo/context-mode/sessions/", () => {
+    it("session dir is under platform-specific config directory", () => {
       const sessionDir = adapter.getSessionDir();
-      expect(sessionDir).toBe(
-        join(homedir(), ".config", "kilo", "context-mode", "sessions"),
-      );
+      let expectedDir: string;
+      if (process.platform === "win32") {
+        const configDir = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+        expectedDir = join(configDir, "kilo", "context-mode", "sessions");
+      } else {
+        const configDir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+        expectedDir = join(configDir, "kilo", "context-mode", "sessions");
+      }
+      expect(sessionDir).toBe(expectedDir);
     });
   });
 });

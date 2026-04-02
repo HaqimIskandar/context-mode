@@ -32,6 +32,7 @@ import {
   copyFileSync,
   accessSync,
   constants,
+  realpathSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
@@ -232,8 +233,11 @@ export class OpenCodeAdapter implements HookAdapter {
     if (this.platform === "kilo") {
       return [
         resolve("kilo.json"),
-        resolve(".kilocode", "kilo.json"),
+        resolve("kilo.jsonc"),
+        resolve(".kilo", "kilo.json"),
+        resolve(".kilo", "kilo.jsonc"),
         join(homedir(), ".config", "kilo", "kilo.json"),
+        join(homedir(), ".config", "kilo", "kilo.jsonc"),
       ];  
     }
     return [
@@ -247,7 +251,13 @@ export class OpenCodeAdapter implements HookAdapter {
   }
 
   getSessionDir(): string {
-    const dir = join(homedir(), ".config", this.platform, "context-mode", "sessions");
+    let configDir: string;
+    if (process.platform === "win32") {
+      configDir = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+    } else {
+      configDir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+    }
+    const dir = join(configDir, this.platform, "context-mode", "sessions");
     mkdirSync(dir, { recursive: true });
     return dir;
   }
@@ -310,25 +320,44 @@ export class OpenCodeAdapter implements HookAdapter {
   }
 
   readSettings(): Record<string, unknown> | null {
-    // Try project-local paths first, then global config
-    // const paths = this.getConfigFilePaths();
-    // for (const configPath of paths) {
     this.settingsPath = undefined;
-    for (const configPath of this.paths()) {
+    const configPaths = this.paths();
+    let firstValidSettings: Record<string, unknown> | null = null;
+    let firstValidPath: string | undefined;
+
+    for (const configPath of configPaths) {
       try {
         const raw = readFileSync(configPath, "utf-8");
-        this.settingsPath = configPath;
         const text = configPath.endsWith(".jsonc") ? stripJsonComments(raw) : raw;
-        return JSON.parse(text) as Record<string, unknown>;
+        const settings = JSON.parse(text) as Record<string, unknown>;
+
+        if (!firstValidSettings) {
+          firstValidSettings = settings;
+          firstValidPath = configPath;
+        }
+
+        const plugins = settings.plugin as string[] | undefined;
+        const hasPlugin = plugins?.some((p) => p.includes("context-mode"));
+        const isGlobalConfig = configPath === configPaths.at(-1) || configPath === configPaths.at(-2);
+        
+        if (hasPlugin || isGlobalConfig) {
+          this.settingsPath = configPath;
+          return settings;
+        }
       } catch {
         continue;
       }
+    }
+
+    if (firstValidSettings) {
+      this.settingsPath = firstValidPath;
+      return firstValidSettings;
     }
     return null;
   }
 
   writeSettings(settings: Record<string, unknown>): void {
-    // Write to opencode.json/kilo.json in current directory
+    // Write to opencode.json(c)/kilo.json(c) in current directory
     writeFileSync(
       this.getSettingsPath(),
       JSON.stringify(settings, null, 2) + "\n",
@@ -370,7 +399,7 @@ export class OpenCodeAdapter implements HookAdapter {
       results.push({
         check: "Plugin registration",
         status: "fail",
-        message: "No plugin array found in opencode.json",
+        message: `No plugin array found in ${this.platform}.json or ${this.platform}.jsonc`,
         fix: "context-mode upgrade",
       });
     }
@@ -380,7 +409,7 @@ export class OpenCodeAdapter implements HookAdapter {
       check: "SessionStart hook",
       status: "warn",
       message:
-        "SessionStart not supported in OpenCode (see issues #14808, #5409)",
+        `SessionStart not supported in ${this.name} (see issues #14808, #5409)`,
     });
 
     return results;
@@ -411,7 +440,7 @@ export class OpenCodeAdapter implements HookAdapter {
     return {
       check: "Plugin registration",
       status: "fail",
-      message: "context-mode not found in opencode.json plugin array",
+      message: `context-mode not found in ${this.platform}.json plugin array`,
       fix: "context-mode upgrade",
     };
   }
@@ -456,19 +485,22 @@ export class OpenCodeAdapter implements HookAdapter {
   }
 
   backupSettings(): string | null {
-    this.settingsPath = undefined;
-    for (const configPath of this.paths()) {
+    const check = this.checkPluginRegistration();
+    
+    if (!this.settingsPath) return null;
+
+    if (check.status === "pass") {
+      return this.settingsPath;
+    } else {
       try {
-        accessSync(configPath, constants.R_OK);
-        this.settingsPath = configPath;
-        const backupPath = configPath + ".bak";
-        copyFileSync(configPath, backupPath);
+        accessSync(this.settingsPath, constants.R_OK);
+        const backupPath = this.settingsPath + ".bak";
+        copyFileSync(this.settingsPath, backupPath);
         return backupPath;
-      } catch {
-        continue;
-      }
+      } catch { 
+        return null;
+       }
     }
-    return null;
   }
 
   setHookPermissions(_pluginRoot: string): string[] {
