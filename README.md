@@ -918,7 +918,10 @@ ctx upgrade     → update from GitHub, rebuild, reconfigure hooks
 ```bash
 context-mode doctor
 context-mode upgrade
+bash scripts/ctx-debug.sh    # full diagnostic report for bug reports
 ```
+
+The debug script collects OS info, runtime versions, better-sqlite3 status, adapter detection, config files (redacted), hook validation, FTS5/SQLite test, executor test, process check, session databases, and environment variables into a single pasteable markdown report.
 
 Works on **all platforms**. On Claude Code, slash commands (`/ctx-stats`, `/ctx-doctor`, `/ctx-upgrade`) are also available.
 

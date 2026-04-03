@@ -1893,7 +1893,8 @@ server.registerTool(
       if (result.exitCode === 0 && result.stdout.trim() === "ok") {
         lines.push("- [x] Server test: PASS");
       } else {
-        lines.push(`- [ ] Server test: FAIL — exit ${result.exitCode}`);
+        const detail = result.stderr?.trim() ? ` (${result.stderr.trim().slice(0, 200)})` : "";
+        lines.push(`- [ ] Server test: FAIL — exit ${result.exitCode}${detail}`);
       }
     } catch (err: unknown) {
       lines.push(`- [ ] Server test: FAIL — ${err instanceof Error ? err.message : err}`);
