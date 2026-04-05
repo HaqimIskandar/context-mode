@@ -52,6 +52,7 @@ All checks should show `[x]`. The doctor validates runtimes, hooks, FTS5, and pl
 | `/context-mode:ctx-stats` | Context savings — per-tool breakdown, tokens consumed, savings ratio. |
 | `/context-mode:ctx-doctor` | Diagnostics — runtimes, hooks, FTS5, plugin registration, versions. |
 | `/context-mode:ctx-upgrade` | Pull latest, rebuild, migrate cache, fix hooks. |
+| `/context-mode:ctx-purge` | Permanently delete all indexed content from the knowledge base. |
 
 > **Note:** Slash commands are a Claude Code plugin feature. On other platforms, type `ctx stats`, `ctx doctor`, or `ctx upgrade` in the chat — the model calls the MCP tool automatically. See [Utility Commands](#utility-commands).
 
