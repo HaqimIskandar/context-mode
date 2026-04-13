@@ -21,8 +21,11 @@ Context Mode is an MCP server that solves all three sides of this problem:
 3. **Think in Code** — The LLM should program the analysis, not compute it. Instead of reading 50 files into context to count functions, the agent writes a script that does the counting and `console.log()`s only the result. One script replaces ten tool calls and saves 100x context. This is a mandatory paradigm across all 12 platforms: stop treating the LLM as a data processor, treat it as a code generator.
 
 <a href="https://www.youtube.com/watch?v=QUHrntlfPo4">
-  <img src="https://img.youtube.com/vi/QUHrntlfPo4/maxresdefault.jpg" alt="context-mode demo" width="100%">
+  <picture>
+    <img src="https://img.youtube.com/vi/QUHrntlfPo4/maxresdefault.jpg" alt="Watch context-mode demo on YouTube" width="100%">
+  </picture>
 </a>
+<p align="center"><a href="https://www.youtube.com/watch?v=QUHrntlfPo4"><img src="https://img.shields.io/badge/%E2%96%B6%EF%B8%8F_Watch_Demo-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch on YouTube"></a></p>
 
 ## Install
 
